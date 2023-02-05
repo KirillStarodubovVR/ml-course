@@ -161,7 +161,7 @@ class KNearestNeighbor:
             closest_y = self.y_train[mask]
             # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
             #########################################################################
-            # TODO:                                                                 #
+            # TODO:                                                                  #
             # Now that you have found the labels of the k nearest neighbors, you    #
             # need to find the most common label in the list closest_y of labels.   #
             # Store this label in y_pred[i]. Break ties by choosing the smaller     #
@@ -176,3 +176,45 @@ class KNearestNeighbor:
             # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
         return y_pred
+
+    def cross_valid(self, num_folds, k_num):
+        """
+        With given training and test dataset, split it and calculate score with different 
+        combinations of tests and trains.
+
+        Inputs:
+        - kfold_num: A numpy array with different number of divisions of dataset.
+
+        Returns:
+        - model_score: A numpy array with scores which relate to number of kfolds
+        """
+
+        X_train_fold = np.array_split(self.X_train, num_folds)
+        Y_train_fold = np.array_split(self.y_train, num_folds)
+
+        # Create numpy array to store the score for different folds
+        k_accuracy = {}
+        # First of all we have to determine the better number of neighbors, k inside the
+        # train dataset
+        for k in k_num:
+            scores = np.zeros((num_folds,))
+            for f in range(num_folds):
+                # let f-index will be test set
+                X_test = X_train_fold[f]
+                y_test = Y_train_fold[f]
+                
+                X_train = np.concatenate((*X_train_fold[:f], *X_train_fold[f+1:]), axis=0)
+                y_train = np.concatenate((*Y_train_fold[:f], *Y_train_fold[f+1:]), axis=0)
+
+                classifier = KNearestNeighbor()
+                classifier.fit(X_train, y_train)
+                y_pred = classifier.predict(X_test, k, num_loops=0)
+                scores[f] = np.mean(y_pred == y_test) 
+            k_accuracy[k] = scores
+
+
+                
+
+        return k_accuracy
+
+
