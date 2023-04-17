@@ -1,0 +1,140 @@
+import numpy as np
+from sklearn.linear_model import LinearRegression
+from tqdm.auto import tqdm
+
+
+class SimplifiedBaggingRegressor:
+    def __init__(self, num_bags, oob=False):
+        self.num_bags = num_bags
+        self.oob = oob
+
+    def _generate_splits(self, data: np.ndarray):
+        '''
+        Generate indices for every bag and store in self.indices_list list
+        '''
+        self.indices_list = []
+        data_length = len(data)
+        for bag in range(self.num_bags):
+            self.indices_list.append(np.random.choice(data_length, data_length, replace=True)) # last time was without replace=True
+            # self.indices_list.append(np.random.randint(0, data_length, size=data_length))
+
+    def fit(self, model_constructor, data, target):
+        '''
+        Fit model on every bag.
+        Model constructor with no parameters (and with no ()) is passed to this function.
+
+        example:
+
+        bagging_regressor = SimplifiedBaggingRegressor(num_bags=10, oob=True)
+        bagging_regressor.fit(LinearRegression, X, y)
+        '''
+        self.data = None
+        self.target = None
+        self._generate_splits(data)
+        assert len(set(list(map(len, self.indices_list)))) == 1, 'All bags should be of the same length!'
+        assert list(map(len, self.indices_list))[0] == len(
+            data), 'All bags should contain `len(data)` number of elements!'
+        self.models_list = []
+        for bag in range(self.num_bags):
+            model = model_constructor()
+            data_bag, target_bag = data[self.indices_list[bag]], target[self.indices_list[bag]]  # Your Code Here
+            self.models_list.append(model.fit(data_bag, target_bag))  # store fitted models here
+        if self.oob:
+            self.data = data
+            self.target = target
+
+    def predict(self, data):
+        '''
+        Get average prediction for every object from passed dataset
+        '''
+        array_of_predictions = [model.predict(data).reshape(-1, 1) for model in self.models_list]
+        array_of_predictions = np.array(array_of_predictions).squeeze(axis=2).mean(axis=0)
+        return array_of_predictions # Your code here
+
+
+    def _get_oob_predictions_from_every_model(self):
+        '''
+        Generates list of lists, where list i contains predictions for self.data[i] object
+        from all models, which have not seen this object during training phase
+        '''
+        list_of_predictions_lists = [[] for _ in range(len(self.data))]
+        # Your Code Here
+        for i in range(len(self.data)):
+            list_of_predictions_lists[i] = [float(model.predict(self.data[i].reshape(1, -1))) for j, model in enumerate(self.models_list) if i not in self.indices_list[j]]
+        self.list_of_predictions_lists = np.array(list_of_predictions_lists, dtype=object)
+
+    def _get_averaged_oob_predictions(self):
+        '''
+        Compute average prediction for every object from training set.
+        If object has been used in all bags on training phase, return None instead of prediction
+        '''
+        self._get_oob_predictions_from_every_model()
+        self.oob_predictions = [sum(p)/len(p) if (0 < len(p) < self.num_bags) else None for p in self.list_of_predictions_lists]  # Your Code Here
+
+    def OOB_score(self):
+        '''
+        Compute mean square error for all objects, which have at least one prediction
+        '''
+        self._get_averaged_oob_predictions()
+        p = np.array(self.oob_predictions)
+        mask = p != None
+        p = p[mask]
+        t = self.target[mask]
+
+        return np.mean(np.square(t-p))# Your Code Here
+
+
+
+
+for _ in tqdm(range(100)):
+    X = np.random.randn(2000, 10)
+    y = np.mean(X, axis=1)
+    bagging_regressor = SimplifiedBaggingRegressor(num_bags=10, oob=True)
+    bagging_regressor.fit(LinearRegression, X, y)
+    predictions = bagging_regressor.predict(X)
+    assert np.mean((predictions - y) ** 2) < 1e-6, 'Linear dependency should be fitted with almost zero error!'
+    assert bagging_regressor.oob, 'OOB feature must be turned on'
+    oob_score = bagging_regressor.OOB_score()
+    assert oob_score < 1e-6, 'OOB error for linear dependency should be also close to zero!'
+    assert abs(
+        np.mean(
+            list(map(len, bagging_regressor.list_of_predictions_lists))
+        ) / bagging_regressor.num_bags - 1 / np.exp(
+            1)) < 0.1, 'Probability of missing a bag should be close to theoretical value!'
+
+print('Simple tests done!')
+
+for _ in tqdm(range(10)):
+    X = np.random.randn(200, 150)
+    y = np.random.randn(len(X))
+    bagging_regressor = SimplifiedBaggingRegressor(num_bags=20, oob=True)
+    bagging_regressor.fit(LinearRegression, X, y)
+    predictions = bagging_regressor.predict(X)
+    average_train_error = np.mean((predictions - y) ** 2)
+    assert bagging_regressor.oob, 'OOB feature must be turned on'
+    oob_score = bagging_regressor.OOB_score()
+    assert oob_score > average_train_error, 'OOB error must be higher than train error due to overfitting!'
+    assert abs(
+        np.mean(
+            list(map(len, bagging_regressor.list_of_predictions_lists))
+        ) / bagging_regressor.num_bags - 1 / np.exp(
+            1)) < 0.1, 'Probability of missing a bag should be close to theoretical value!'
+
+print('Medium tests done!')
+
+for _ in tqdm(range(10)):
+    X = np.random.randn(2000, 15)
+    y = np.random.randn(len(X))
+    bagging_regressor = SimplifiedBaggingRegressor(num_bags=100, oob=True)
+    bagging_regressor.fit(LinearRegression, X, y)
+    predictions = bagging_regressor.predict(X)
+    oob_score = bagging_regressor.OOB_score()
+    assert abs(
+        np.mean(
+            list(map(len, bagging_regressor.list_of_predictions_lists))
+        ) / bagging_regressor.num_bags - 1 / np.exp(
+            1)) < 1e-2, 'Probability of missing a bag should be close to theoretical value!'
+
+print('Complex tests done!')
+
+np.mean(list(map(len, bagging_regressor.list_of_predictions_lists))) / bagging_regressor.num_bags - 1/np.exp(1)
